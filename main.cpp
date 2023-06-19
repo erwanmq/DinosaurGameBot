@@ -1,104 +1,149 @@
 #define UNICODE 1
 
 #include <Windows.h>
-#include <opencv2/core.hpp>
-#include <opencv2/imgcodecs.hpp>
-#include <opencv2/highgui.hpp>
-#include <opencv2/imgproc.hpp>
 #include <tchar.h>
 #include <iostream>
-
-cv::Mat hwnd2mat(HWND hwnd){
-
-    HDC hwindowDC,hwindowCompatibleDC;
-
-    int height,width,srcheight,srcwidth;
-    HBITMAP hbwindow;
-    cv::Mat src;
-    BITMAPINFOHEADER  bi;
-    
-    hwindowDC = GetDC(hwnd);
-    hwindowCompatibleDC = CreateCompatibleDC(hwindowDC);
-    SetStretchBltMode(hwindowCompatibleDC,COLORONCOLOR);  
-    
-    RECT windowsize;    // get the height and width of the screen
-    GetClientRect(hwnd, &windowsize);
-    
-    srcheight = windowsize.bottom;
-    srcwidth = windowsize.right;
-    height = windowsize.bottom/1.2;  //change this to whatever size you want to resize to
-    width = windowsize.right/1.2;
-    
-    src.create(height,width,CV_8UC4);
-
-    // create a bitmap
-    hbwindow = CreateCompatibleBitmap( hwindowDC, width, height);
-    bi.biSize = sizeof(BITMAPINFOHEADER);    //http://msdn.microsoft.com/en-us/library/windows/window/dd183402%28v=vs.85%29.aspx
-    bi.biWidth = width;    
-    bi.biHeight = -height;  //this is the line that makes it draw upside down or not
-    bi.biPlanes = 1;    
-    bi.biBitCount = 32;    
-    bi.biCompression = BI_RGB;    
-    bi.biSizeImage = 0;  
-    bi.biXPelsPerMeter = 0;    
-    bi.biYPelsPerMeter = 0;    
-    bi.biClrUsed = 0;    
-    bi.biClrImportant = 0;
-    
-    // use the previously created device context with the bitmap
-    SelectObject(hwindowCompatibleDC, hbwindow);
-    // copy from the window device context to the bitmap device context
-    StretchBlt( hwindowCompatibleDC, 0,0, width, height, hwindowDC, 0, 0,srcwidth,srcheight, SRCCOPY); //change SRCCOPY to NOTSRCCOPY for wacky colors !
-    GetDIBits(hwindowCompatibleDC,hbwindow,0,height,src.data,(BITMAPINFO *)&bi,DIB_RGB_COLORS);  //copy from hwindowCompatibleDC to hbwindow
-
-    // avoid memory leak
-    DeleteObject (hbwindow); 
-    DeleteDC(hwindowCompatibleDC); 
-    ReleaseDC(hwnd, hwindowDC);
-
-    return src;
-}
-
-void handleGame(HWND& _window) 
-{
-    LPCSTR windowClass = "Chrome_WidgetWin_1";
-    LPCSTR windowName = "Stack Overflow - Where Developers Learn, Share, & Build Careers - Google Chrome";
-    _window = FindWindowA(nullptr, nullptr);
-    while (_window == nullptr) 
-    {
-        std::cout << "failed" << std::endl;
-        _window = FindWindowA(nullptr, nullptr);
-        Sleep(1000);
-    }
-}
+#include <chrono>
 
 POINT getDinosaurPosition()
 {
+    GetAsyncKeyState(1); // function to clean the stack
     POINT pos_dino;
-    while(GetAsyncKeyState(1) == 0)
-        GetCursorPos(&pos_dino);
-
+    std::cout << "click on the dino\n";
+    while(GetAsyncKeyState(1) == 0);
+    GetCursorPos(&pos_dino);
     return pos_dino;
 }
+
+void pressSpaceBar(INPUT* ip, int ms)
+{
+    ip->ki.dwFlags = 0;
+    SendInput(1, ip, sizeof(INPUT));
+    Sleep(ms);
+    ip->ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(1, ip, sizeof(INPUT));
+}
+
+struct bm
+{
+    BITMAP bitmap;
+    bool val = false;
+};
+
+bm transformHDCtoBITMAP(HDC& hdc, HWND& hwnd)
+{
+    bm bm;
+
+    WCHAR* wPath = L"image.bmp";
+
+    BITMAPFILEHEADER bfHeader;
+    BITMAPINFOHEADER biHeader;
+    BITMAPINFO bInfo;
+    HGDIOBJ hTempBitmap;
+    HBITMAP hBitmap;
+    BITMAP bAllDesktops;
+    HDC hDC, hMemDC;
+    LONG lWidth, lHeight;
+    BYTE *bBits = NULL;
+    HANDLE hHeap = GetProcessHeap();
+    DWORD cbBits, dwWritten = 0;
+    HANDLE hFile;
+    INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+
+    std::cout << x << " " << y << '\n';
+
+    ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
+    ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
+    ZeroMemory(&bInfo, sizeof(BITMAPINFO));
+    ZeroMemory(&bAllDesktops, sizeof(BITMAP));
+
+    hDC = GetDC(NULL);
+    hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
+    GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops);
+
+    lWidth = bAllDesktops.bmWidth;
+    lHeight = bAllDesktops.bmHeight;
+
+    DeleteObject(hTempBitmap);
+
+    bfHeader.bfType = (WORD)('B' | ('M' << 8));
+    bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
+    biHeader.biSize = sizeof(BITMAPINFOHEADER);
+    biHeader.biBitCount = 24;
+    biHeader.biCompression = BI_RGB;
+    biHeader.biPlanes = 1;
+    biHeader.biWidth = lWidth;
+    biHeader.biHeight = lHeight;
+
+    bInfo.bmiHeader = biHeader;
+
+    cbBits = (((24 * lWidth + 31)&~31) / 8) * lHeight;
+
+    hMemDC = CreateCompatibleDC(hDC);
+    hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID **)&bBits, NULL, 0);
+    SelectObject(hMemDC, hBitmap);
+    BitBlt(hMemDC, 0, 0, lWidth, lHeight, hDC, x, y, SRCCOPY);
+
+    
+    hFile = CreateFileW(wPath, GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if(INVALID_HANDLE_VALUE == hFile)
+    {
+        DeleteDC(hMemDC);
+        ReleaseDC(NULL, hDC);
+        DeleteObject(hBitmap);
+        return bm;
+    }
+    WriteFile(hFile, &bfHeader, sizeof(BITMAPFILEHEADER), &dwWritten, NULL);
+    WriteFile(hFile, &biHeader, sizeof(BITMAPINFOHEADER), &dwWritten, NULL);
+    WriteFile(hFile, bBits, cbBits, &dwWritten, NULL);
+    FlushFileBuffers(hFile);
+    CloseHandle(hFile);
+
+    DeleteDC(hMemDC);
+    ReleaseDC(NULL, hDC);
+    DeleteObject(hBitmap);
+
+    bm.val = true;
+    return bm;
+}
+
 
 int main()
 {
     std::cout << "start\n";
 
-    HWND window = nullptr;
-    int key{ 0 };
     POINT dino_position = getDinosaurPosition();
-    while(key != 27)
-    {
-        window = GetDesktopWindow();
-        cv::Mat matRef = hwnd2mat(window);
-
-        imshow("Title", matRef);
-
-        // Wait until some key is pressed
-        key = cv::waitKey(5);
-    }
-    //delete window;
+    HWND hwnd = GetDesktopWindow();
+    HDC windowHDC = GetDC(hwnd);
     
+    COLORREF color_dinosaur = GetPixel(windowHDC, dino_position.x, dino_position.y);
+
+    INPUT ip;
+    ip.type = INPUT_KEYBOARD;
+    ip.ki.wScan = 0;
+    ip.ki.time = 0;
+    ip.ki.dwExtraInfo = 0;
+    ip.ki.wVk = VK_SPACE;
+
+    std::cout << "the bot is playing\n";
+
+    bm bm = transformHDCtoBITMAP(windowHDC, hwnd);
+    if(!bm.val)
+    {
+        std::cout << "error bitmap\n";
+        return -1;
+    }
+
+    while(GetAsyncKeyState(VK_ESCAPE) == 0)
+    {
+        
+        if(GetPixel(windowHDC, dino_position.x + 100, dino_position.y) == color_dinosaur && GetPixel(windowHDC, dino_position.x + 150, dino_position.y) == color_dinosaur)
+            pressSpaceBar(&ip, 100);
+        else if(GetPixel(windowHDC, dino_position.x + 100, dino_position.y) == color_dinosaur)
+            pressSpaceBar(&ip, 50);
+    }
+    ReleaseDC(hwnd, windowHDC);
+    DeleteObject(hwnd);
     return 0;
 }

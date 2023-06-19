@@ -3,19 +3,13 @@
         {
             "type": "cppbuild",
             "label": "C/C++: g++.exe build active file",
-            "command": "D:\\msys64\\mingw64\\bin\\g++.exe",
+            "command": "C:\\msys64\\mingw64\\bin\\g++.exe",
             "args": [
                 "-fdiagnostics-color=always",
                 "-g",
                 "${file}",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "-ID:\\msys64\\mingw64\\include\\opencv4",
-                "-LD:\\msys64\\mingw64\\lib",
-                "-lopencv_core",
-                "-lopencv_imgcodecs",
-                "-lopencv_highgui",
-                "-lopencv_imgproc",
                 "-lgdi32"
             ],
             "options": {

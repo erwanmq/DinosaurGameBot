@@ -5,7 +5,6 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${vcpkgRoot}/x64-windows/include",
-                "D:\\msys64\\mingw64\\include\\opencv4"
             ],
             "defines": [
                 "_DEBUG",
