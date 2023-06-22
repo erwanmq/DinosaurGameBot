@@ -4,6 +4,7 @@
 #include <tchar.h>
 #include <iostream>
 #include <chrono>
+#include <memory>
 
 POINT getDinosaurPosition()
 {
@@ -24,90 +25,77 @@ void pressSpaceBar(INPUT* ip, int ms)
     SendInput(1, ip, sizeof(INPUT));
 }
 
-struct bm
+struct PixelsInfo
 {
-    BITMAP bitmap;
-    bool val = false;
+    HBITMAP hBitmap;
+    std::unique_ptr<BYTE> bitPointer;
+    int MAX_WIDTH;
+    int MAX_HEIGHT;
+
+    PixelsInfo() = default;
+
+    PixelsInfo(PixelsInfo& pixelsInfo)
+    {
+        bitPointer = std::move(pixelsInfo.bitPointer);
+        MAX_WIDTH = pixelsInfo.MAX_WIDTH;
+        MAX_HEIGHT = pixelsInfo.MAX_HEIGHT;
+    }
+
+    ~PixelsInfo() = default;
 };
 
-bm transformHDCtoBITMAP(HDC& hdc, HWND& hwnd)
+void transformHDCtoBITMAP(HDC& hdc, HWND& hwnd, PixelsInfo& pixelsInfo)
 {
-    bm bm;
+    RECT rect;
+    GetWindowRect(hwnd, &rect);
+    int MAX_WIDTH = rect.right;
+    int MAX_HEIGHT = rect.bottom;
 
-    WCHAR* wPath = L"image.bmp";
+    HDC hdcTemp = CreateCompatibleDC(hdc);
+    BITMAPINFO bitmap;
+    bitmap.bmiHeader.biSize = sizeof(bitmap.bmiHeader);
+    bitmap.bmiHeader.biWidth = MAX_WIDTH;
+    bitmap.bmiHeader.biHeight = -MAX_HEIGHT;
+    bitmap.bmiHeader.biPlanes = 1;
+    bitmap.bmiHeader.biBitCount = 32;
+    bitmap.bmiHeader.biCompression = BI_RGB;
+    bitmap.bmiHeader.biSizeImage = MAX_WIDTH * 4 * MAX_HEIGHT;
+    bitmap.bmiHeader.biClrUsed = 0;
+    bitmap.bmiHeader.biClrImportant = 0;
 
-    BITMAPFILEHEADER bfHeader;
-    BITMAPINFOHEADER biHeader;
-    BITMAPINFO bInfo;
-    HGDIOBJ hTempBitmap;
-    HBITMAP hBitmap;
-    BITMAP bAllDesktops;
-    HDC hDC, hMemDC;
-    LONG lWidth, lHeight;
-    BYTE *bBits = NULL;
-    HANDLE hHeap = GetProcessHeap();
-    DWORD cbBits, dwWritten = 0;
-    HANDLE hFile;
-    INT x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    INT y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    BYTE* bitPointer;
+    pixelsInfo.hBitmap = CreateDIBSection(hdcTemp, &bitmap, DIB_RGB_COLORS, (void**)(&bitPointer), NULL, NULL);
+    SelectObject(hdcTemp, pixelsInfo.hBitmap);
+    BitBlt(hdcTemp, 0, 0, MAX_WIDTH, MAX_HEIGHT, hdc, 0, 0, SRCCOPY);
 
-    std::cout << x << " " << y << '\n';
-
-    ZeroMemory(&bfHeader, sizeof(BITMAPFILEHEADER));
-    ZeroMemory(&biHeader, sizeof(BITMAPINFOHEADER));
-    ZeroMemory(&bInfo, sizeof(BITMAPINFO));
-    ZeroMemory(&bAllDesktops, sizeof(BITMAP));
-
-    hDC = GetDC(NULL);
-    hTempBitmap = GetCurrentObject(hDC, OBJ_BITMAP);
-    GetObjectW(hTempBitmap, sizeof(BITMAP), &bAllDesktops);
-
-    lWidth = bAllDesktops.bmWidth;
-    lHeight = bAllDesktops.bmHeight;
-
-    DeleteObject(hTempBitmap);
-
-    bfHeader.bfType = (WORD)('B' | ('M' << 8));
-    bfHeader.bfOffBits = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER);
-    biHeader.biSize = sizeof(BITMAPINFOHEADER);
-    biHeader.biBitCount = 24;
-    biHeader.biCompression = BI_RGB;
-    biHeader.biPlanes = 1;
-    biHeader.biWidth = lWidth;
-    biHeader.biHeight = lHeight;
-
-    bInfo.bmiHeader = biHeader;
-
-    cbBits = (((24 * lWidth + 31)&~31) / 8) * lHeight;
-
-    hMemDC = CreateCompatibleDC(hDC);
-    hBitmap = CreateDIBSection(hDC, &bInfo, DIB_RGB_COLORS, (VOID **)&bBits, NULL, 0);
-    SelectObject(hMemDC, hBitmap);
-    BitBlt(hMemDC, 0, 0, lWidth, lHeight, hDC, x, y, SRCCOPY);
+    DeleteDC(hdcTemp);
 
     
-    hFile = CreateFileW(wPath, GENERIC_WRITE | GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if(INVALID_HANDLE_VALUE == hFile)
-    {
-        DeleteDC(hMemDC);
-        ReleaseDC(NULL, hDC);
-        DeleteObject(hBitmap);
-        return bm;
-    }
-    WriteFile(hFile, &bfHeader, sizeof(BITMAPFILEHEADER), &dwWritten, NULL);
-    WriteFile(hFile, &biHeader, sizeof(BITMAPINFOHEADER), &dwWritten, NULL);
-    WriteFile(hFile, bBits, cbBits, &dwWritten, NULL);
-    FlushFileBuffers(hFile);
-    CloseHandle(hFile);
 
-    DeleteDC(hMemDC);
-    ReleaseDC(NULL, hDC);
-    DeleteObject(hBitmap);
-
-    bm.val = true;
-    return bm;
+    std::unique_ptr<BYTE> bitSmartPtr(bitPointer);
+    
+    pixelsInfo.bitPointer = std::move(bitSmartPtr);
+    pixelsInfo.MAX_HEIGHT = MAX_HEIGHT;
+    pixelsInfo.MAX_WIDTH = MAX_WIDTH;
 }
 
+
+
+bool findObstacle(HDC& hdc, HWND& hwnd, PixelsInfo& pixelsInfo, POINT& position, COLORREF& color_dino)
+{
+    transformHDCtoBITMAP(hdc, hwnd, pixelsInfo);
+    int red, green, blue, alpha;
+
+    red = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 0];
+    green = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 1];
+    blue = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 2];
+
+    if( red == (int)GetRValue(color_dino) && green == (int)GetGValue(color_dino) && blue == (int)GetBValue(color_dino))
+    {
+        return true;
+    }   
+    return false;
+}
 
 int main()
 {
@@ -127,23 +115,19 @@ int main()
     ip.ki.wVk = VK_SPACE;
 
     std::cout << "the bot is playing\n";
-
-    bm bm = transformHDCtoBITMAP(windowHDC, hwnd);
-    if(!bm.val)
-    {
-        std::cout << "error bitmap\n";
-        return -1;
-    }
-
+    
+    PixelsInfo pixelsInfo;
     while(GetAsyncKeyState(VK_ESCAPE) == 0)
     {
-        
-        if(GetPixel(windowHDC, dino_position.x + 100, dino_position.y) == color_dinosaur && GetPixel(windowHDC, dino_position.x + 150, dino_position.y) == color_dinosaur)
-            pressSpaceBar(&ip, 100);
-        else if(GetPixel(windowHDC, dino_position.x + 100, dino_position.y) == color_dinosaur)
+        if(findObstacle(windowHDC, hwnd, pixelsInfo, dino_position, color_dinosaur))
             pressSpaceBar(&ip, 50);
-    }
+        
+        pixelsInfo.bitPointer.release();
+        DeleteObject(pixelsInfo.hBitmap);
+    }   
     ReleaseDC(hwnd, windowHDC);
     DeleteObject(hwnd);
+    
+
     return 0;
 }
