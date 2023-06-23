@@ -5,6 +5,9 @@
 #include <iostream>
 #include <chrono>
 #include <memory>
+#include <vector>
+#include <map>
+#include <algorithm> 
 
 POINT getDinosaurPosition()
 {
@@ -81,20 +84,26 @@ void transformHDCtoBITMAP(HDC& hdc, HWND& hwnd, PixelsInfo& pixelsInfo)
 
 
 
-bool findObstacle(HDC& hdc, HWND& hwnd, PixelsInfo& pixelsInfo, POINT& position, COLORREF& color_dino)
+int findObstacle(HDC& hdc, HWND& hwnd, PixelsInfo& pixelsInfo, POINT& position, COLORREF& color_dino, int offset)
 {
     transformHDCtoBITMAP(hdc, hwnd, pixelsInfo);
-    int red, green, blue, alpha;
+    int red, green, blue;
 
-    red = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 0];
-    green = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 1];
-    blue = (int)pixelsInfo.bitPointer.get()[(pixelsInfo.MAX_WIDTH * (position.y) + position.x) * 4 + 200 * 4 + 2];
+    int line_begin = (pixelsInfo.MAX_WIDTH * (position.y) + position.x + 160 + offset) * 4;
+    int line_end = (pixelsInfo.MAX_WIDTH * (position.y) + position.x + 210 + offset) * 4;
 
-    if( red == (int)GetRValue(color_dino) && green == (int)GetGValue(color_dino) && blue == (int)GetBValue(color_dino))
+    red = (int)pixelsInfo.bitPointer.get()[line_begin - pixelsInfo.MAX_WIDTH * 20 * 4];
+    green = (int)pixelsInfo.bitPointer.get()[line_begin - pixelsInfo.MAX_WIDTH * 20 * 4 + 1];
+    blue = (int)pixelsInfo.bitPointer.get()[line_begin - pixelsInfo.MAX_WIDTH * 20 * 4 + 2];
+
+    int number_same_color{ 0 };
+    for(int i{ line_begin }; i < line_end; i += 4)
     {
-        return true;
-    }   
-    return false;
+        if((int)pixelsInfo.bitPointer.get()[i] != red && (int)pixelsInfo.bitPointer.get()[i + 1] != green && (int)pixelsInfo.bitPointer.get()[i + 2] != blue)
+            number_same_color++;
+    }
+
+    return number_same_color;
 }
 
 int main()
@@ -114,17 +123,57 @@ int main()
     ip.ki.dwExtraInfo = 0;
     ip.ki.wVk = VK_SPACE;
 
-    std::cout << "the bot is playing\n";
+    
     
     PixelsInfo pixelsInfo;
+    int index{ 0 };
+
+    
+
+    std::vector<int> vValue_pixel;
+    while(GetAsyncKeyState(VK_SPACE) == 0);
+
+    std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+    std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+    std::cout << "the bot is playing\n";
     while(GetAsyncKeyState(VK_ESCAPE) == 0)
     {
-        if(findObstacle(windowHDC, hwnd, pixelsInfo, dino_position, color_dinosaur))
-            pressSpaceBar(&ip, 50);
+        int number = findObstacle(windowHDC, hwnd, pixelsInfo, dino_position, color_dinosaur, (int)(std::chrono::duration_cast<std::chrono::seconds>(end - begin).count() / 2));
+        int number_max{ 0 };
+        if(number != 0)
+        {
+            vValue_pixel.push_back(number);
+            goto end_while;
+        }
+        else if(vValue_pixel.size() != 0)
+        {
+            number_max = *std::max_element(vValue_pixel.begin(), vValue_pixel.end());
+            vValue_pixel.clear();
+        }
         
+
+        if(5 < number_max && number_max <= 40)
+        {
+            pressSpaceBar(&ip, 5);
+        }
+        else if(40 < number_max && number_max <= 60)
+        {
+            pressSpaceBar(&ip, 30);
+        }
+        else if(60 < number_max)
+        {
+            pressSpaceBar(&ip, 70);
+        }
+
+        std::cout << "number max = " << number_max << '\n';
+        
+        end_while:
         pixelsInfo.bitPointer.release();
         DeleteObject(pixelsInfo.hBitmap);
-    }   
+
+        end = std::chrono::steady_clock::now();
+    }
+      
     ReleaseDC(hwnd, windowHDC);
     DeleteObject(hwnd);
     
